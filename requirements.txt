@@ -1,0 +1,8 @@
+numpy
+pandas
+ccxt
+httpx
+cryptography
+python-dotenv
+pytz
+Flask
