@@ -107,7 +107,7 @@ HTML_TEMPLATE = """
     <div>
         <div class="header-title">
             <span class="dot {{ 'dot-green' if is_active and not ob_stale else 'dot-yellow' if is_active else 'dot-red' }}"></span>
-            PRICE STALKER <span style="color:#444;">v5</span>
+            FIRST SIGNAL <span style="color:#444;">v5.2</span>
         </div>
         <div style="font-size:0.65rem; color:var(--muted); margin-top:2px;">
             {{ mode }} &nbsp;·&nbsp; {{ 'Online' if is_active else 'Offline' }}{{ ' · Stale OB' if ob_stale else '' }}
@@ -132,7 +132,7 @@ HTML_TEMPLATE = """
                 {{ ut_signal | upper if ut_signal else 'IDLE' }}
             </span>
         </div>
-        <div class="sub">Age: {{ signal_age }}m &nbsp;/&nbsp; Limit: {{ stalk_limit }}m</div>
+        <div class="sub">Age: {{ signal_age }}m &nbsp;/&nbsp; Mode: {{ stalk_limit }}</div>
         <div class="sub">Stop: ${{ "{:.2f}".format(ut_stop) }} &nbsp; ATR: {{ "{:.2f}".format(ut_atr) }}</div>
     </div>
 </div>
@@ -299,13 +299,28 @@ def safe_int(val, default=0):
 
 
 def get_data():
-    files   = glob.glob(f"{CSV_FILE}*")
-    df_list = [pd.read_csv(p) for p in files if os.path.exists(p)]
+    files = glob.glob(f"{CSV_FILE}*")
+    df_list = []
+    for p in files:
+        if not os.path.exists(p):
+            continue
+        try:
+            tmp = pd.read_csv(p)
+            if "timestamp" in tmp.columns and not tmp.empty:
+                df_list.append(tmp)
+        except Exception:
+            pass  # skip empty, corrupt, or mid-write files
+
     if not df_list:
         return None
 
     try:
         df = pd.concat(df_list, ignore_index=True)
+
+        # Guard: require timestamp column and at least one row
+        if "timestamp" not in df.columns or df.empty:
+            return None
+
         df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
         df = df.sort_values("timestamp").reset_index(drop=True)
         last    = df.iloc[-1]
@@ -378,7 +393,7 @@ def get_data():
             ut_signal=last.get("ut_signal") or None,
             ut_stop=safe_float(last.get("ut_stop", 0)),
             ut_atr=safe_float(last.get("ut_atr",  0)),
-            signal_age=signal_age, stalk_limit=10,
+            signal_age=signal_age, stalk_limit="first-signal",
             wins=wins, losses=losses, total=total,
             win_rate=(wins / total * 100) if total > 0 else 0.0,
             avg_entry=avg_entry, avg_spread=avg_spread,
