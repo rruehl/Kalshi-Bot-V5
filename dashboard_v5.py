@@ -2,7 +2,7 @@
 dashboard_v5.py — v5.2.0
 =========================
 Flask dashboard for production_bot_v5.
-Mobile-first compact layout based on v4 reference design.
+Mobile-first compact super cool layout based on v4 reference design.
 
 PnL chart: cumulative realized PnL only.
   - Built from pnl_this_trade column on PAYOUT/SETTLE rows.
