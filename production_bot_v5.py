@@ -1,13 +1,25 @@
 """
 production_bot_v5.py
 ====================
-Kalshi BTC Binary Options Trading Bot — Version 5.1.0
-"Temporal Stalker Edition"
+Kalshi BTC Binary Options Trading Bot — Version 5.2.0
+"First Signal Edition"
 
 Architecture:
   - Tracks trends by 'Birth Time' (the exact minute the crossover occurred).
-  - Stalking: Allows entry anytime during the trend if price is fair and age < limit.
-  - Cross-Session: Will stalk a 'Buy' signal into a new Kalshi session if it's still fresh.
+  - First-Signal: Enters only on the FIRST signal born within the current session.
+    Carry-over signals from prior sessions are ignored entirely.
+  - Price floor removed (MARKET_VETO_PRICE=1 in config) — enters at any fair price
+    up to MARKET_MAX_ENTRY_PRICE.
+
+Changelog v5.2.0:
+  - STRATEGY CHANGE: No longer stalks carry-over signals from prior sessions.
+         session_start_time is stamped on every session roll. Any signal with
+         birth_ts < session_start_time is filtered with reason 'signal_born_before_session'.
+         This ensures the bot only ever trades the first fresh signal of each session,
+         which back-testing showed produces 79.5% WR vs 53.5% for the stalker approach.
+  - STRATEGY CHANGE: MARKET_VETO_PRICE lowered to 1 in config.json (price floor removed).
+         Combined with the first-signal filter this allows entry on high-conviction
+         contrarian signals where the order book hasn't yet repriced.
 
 Changelog v5.1.0:
   - FIX: Replaced REST polling (5s sleep) with watch_ohlcv WebSocket stream.
@@ -46,7 +58,7 @@ from dotenv import load_dotenv
 from kalshi_client import KalshiClient
 
 # ── Version ───────────────────────────────────────────────────────────────────
-VERSION = "5.1.0 - Temporal Stalker"
+VERSION = "5.2.0 - First Signal"
 
 current_dir = Path(__file__).resolve().parent
 sys.path.append(str(current_dir.parent))
@@ -231,7 +243,8 @@ class StrategyController:
         self.prev_ticker      = None
         self.prev_strike      = 0.0
         self.last_valid_ob_ts = 0.0
-        self.last_heartbeat_ts = 0.0
+        self.last_heartbeat_ts  = 0.0
+        self.session_start_time = time.time()  # Signals born before this are carry-overs
 
         # FIX: Load persisted birth time so restarts don't re-fire the same signal
         Path(Config.STATE_DIR).mkdir(parents=True, exist_ok=True)
@@ -469,6 +482,11 @@ class StrategyController:
             return
         if ob_stale:
             ctx["filter_reason"] = "orderbook_stale"
+            return
+
+        # Only enter on signals born within this session — ignore carry-overs
+        if birth_ts < self.session_start_time:
+            ctx["filter_reason"] = f"signal_born_before_session_{signal_age_min:.1f}m"
             return
 
         # ── Determine side and maker price ───────────────────────────────
@@ -826,6 +844,7 @@ async def main():
                 ))
                 bot.active_position = None
                 bot.session_fills   = 0
+                bot.session_start_time = time.time()  # New session: only accept fresh signals
                 # Note: acted_on_birth_time is NOT reset here — intentional.
                 # Prevents re-entry on the same signal in the new session.
 
